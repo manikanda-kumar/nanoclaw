@@ -97,9 +97,23 @@ function translateJid(jid: string): string {
   return jid;
 }
 
+const telegramTypingIntervals = new Map<string, ReturnType<typeof setInterval>>();
+
 async function setTyping(jid: string, isTyping: boolean): Promise<void> {
   if (jid.startsWith('tg:')) {
-    if (isTyping) await setTelegramTyping(jid);
+    if (isTyping) {
+      await setTelegramTyping(jid);
+      // Telegram typing expires after ~5s, re-send every 4s
+      if (!telegramTypingIntervals.has(jid)) {
+        telegramTypingIntervals.set(jid, setInterval(() => setTelegramTyping(jid), 4000));
+      }
+    } else {
+      const interval = telegramTypingIntervals.get(jid);
+      if (interval) {
+        clearInterval(interval);
+        telegramTypingIntervals.delete(jid);
+      }
+    }
     return;
   }
   try {
