@@ -30,3 +30,12 @@ groups/global/*
 .vscode/
 
 agents-sdk-docs
+
+# Runtime
+*.pid
+
+# Claude Code local settings
+.claude/settings.local.json
+
+# Session files (all .md except README.md and docs/)
+CONTINUITY.md

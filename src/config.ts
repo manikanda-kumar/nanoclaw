@@ -1,3 +1,4 @@
+import 'dotenv/config';
 import path from 'path';
 
 export const ASSISTANT_NAME = process.env.ASSISTANT_NAME || 'Andy';

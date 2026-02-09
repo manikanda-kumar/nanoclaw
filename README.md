@@ -28,6 +28,20 @@ claude
 
 Then run `/setup`. Claude Code handles everything: dependencies, authentication, container setup, service configuration.
 
+## Running
+
+Control NanoClaw with the `./nanoclaw` script:
+
+```bash
+./nanoclaw start    # Start the service
+./nanoclaw stop     # Stop the service
+./nanoclaw restart  # Restart
+./nanoclaw status   # Check if running
+./nanoclaw logs     # Tail logs
+```
+
+Alternatively, use launchd for auto-start on login (configured during `/setup`).
+
 ## Philosophy
 
 **Small enough to understand.** One process, a few source files. No microservices, no message queues, no abstraction layers. Have Claude Code walk you through it.
@@ -46,7 +60,7 @@ Then run `/setup`. Claude Code handles everything: dependencies, authentication,
 
 ## What It Supports
 
-- **WhatsApp I/O** - Message Claude from your phone
+- **WhatsApp or Telegram** - Message Claude from your phone (run `/add-telegram` to switch)
 - **Isolated group context** - Each group has its own `CLAUDE.md` memory, isolated filesystem, and runs in its own container sandbox with only that filesystem mounted
 - **Main channel** - Your private channel (self-chat) for admin control; every other group is completely isolated
 - **Scheduled tasks** - Recurring jobs that run Claude and can message you back
@@ -98,7 +112,6 @@ Users then run `/add-telegram` on their fork and get clean code that does exactl
 Skills we'd love to see:
 
 **Communication Channels**
-- `/add-telegram` - Add Telegram as channel. Should give the user option to replace WhatsApp or add as additional channel. Also should be possible to add it as a control channel (where it can trigger actions) or just a channel that can be used in actions triggered elsewhere
 - `/add-slack` - Add Slack
 - `/add-discord` - Add Discord
 
@@ -135,7 +148,7 @@ Key files:
 
 **Why WhatsApp and not Telegram/Signal/etc?**
 
-Because I use WhatsApp. Fork it and run a skill to change it. That's the whole point.
+Both WhatsApp and Telegram are supported. Run `/add-telegram` during setup to use Telegram instead (or alongside WhatsApp). Want Signal or something else? Fork it and add a skill.
 
 **Why Apple Container instead of Docker?**
 
