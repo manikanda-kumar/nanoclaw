@@ -28,7 +28,6 @@ export interface SchedulerDependencies {
   queue: GroupQueue;
   onProcess: (groupJid: string, proc: ChildProcess, containerName: string, groupFolder: string) => void;
   sendMessage: (jid: string, text: string) => Promise<void>;
-  assistantName: string;
 }
 
 async function runTask(
@@ -90,16 +89,18 @@ async function runTask(
   const sessionId =
     task.context_mode === 'group' ? sessions[task.group_folder] : undefined;
 
-  // Idle timer: writes _close sentinel after IDLE_TIMEOUT of no output,
-  // so the container exits instead of hanging at waitForIpcMessage forever.
-  let idleTimer: ReturnType<typeof setTimeout> | null = null;
+  // After the task produces a result, close the container promptly.
+  // Tasks are single-turn — no need to wait IDLE_TIMEOUT (30 min) for the
+  // query loop to time out. A short delay handles any final MCP calls.
+  const TASK_CLOSE_DELAY_MS = 10000;
+  let closeTimer: ReturnType<typeof setTimeout> | null = null;
 
-  const resetIdleTimer = () => {
-    if (idleTimer) clearTimeout(idleTimer);
-    idleTimer = setTimeout(() => {
-      logger.debug({ taskId: task.id }, 'Scheduled task idle timeout, closing container stdin');
+  const scheduleClose = () => {
+    if (closeTimer) return; // already scheduled
+    closeTimer = setTimeout(() => {
+      logger.debug({ taskId: task.id }, 'Closing task container after result');
       deps.queue.closeStdin(task.chat_jid);
-    }, IDLE_TIMEOUT);
+    }, TASK_CLOSE_DELAY_MS);
   };
 
   try {
@@ -117,13 +118,12 @@ async function runTask(
       async (streamedOutput: ContainerOutput) => {
         if (streamedOutput.result) {
           result = streamedOutput.result;
-          // Forward result to user (strip <internal> tags)
-          const text = streamedOutput.result.replace(/<internal>[\s\S]*?<\/internal>/g, '').trim();
-          if (text) {
-            await deps.sendMessage(task.chat_jid, `${deps.assistantName}: ${text}`);
-          }
-          // Only reset idle timer on actual results, not session-update markers
-          resetIdleTimer();
+          // Forward result to user (sendMessage handles formatting)
+          await deps.sendMessage(task.chat_jid, streamedOutput.result);
+          scheduleClose();
+        }
+        if (streamedOutput.status === 'success') {
+          deps.queue.notifyIdle(task.chat_jid);
         }
         if (streamedOutput.status === 'error') {
           error = streamedOutput.error || 'Unknown error';
@@ -131,7 +131,7 @@ async function runTask(
       },
     );
 
-    if (idleTimer) clearTimeout(idleTimer);
+    if (closeTimer) clearTimeout(closeTimer);
 
     if (output.status === 'error') {
       error = output.error || 'Unknown error';
@@ -145,7 +145,7 @@ async function runTask(
       'Task completed',
     );
   } catch (err) {
-    if (idleTimer) clearTimeout(idleTimer);
+    if (closeTimer) clearTimeout(closeTimer);
     error = err instanceof Error ? err.message : String(err);
     logger.error({ taskId: task.id, error }, 'Task failed');
   }

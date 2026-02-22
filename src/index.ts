@@ -205,7 +205,7 @@ async function syncGroupMetadata(force = false): Promise<void> {
  * Get available groups list for the agent.
  * Returns groups ordered by most recent activity.
  */
-function getAvailableGroups(): AvailableGroup[] {
+export function getAvailableGroups(): AvailableGroup[] {
   const chats = getAllChats();
   const registeredJids = new Set(Object.keys(registeredGroups));
 
@@ -217,6 +217,11 @@ function getAvailableGroups(): AvailableGroup[] {
       lastActivity: c.last_message_time,
       isRegistered: registeredJids.has(c.jid),
     }));
+}
+
+/** @internal - exported for testing */
+export function _setRegisteredGroups(groups: Record<string, RegisteredGroup>): void {
+  registeredGroups = groups;
 }
 
 function escapeXml(s: string): string {
@@ -879,7 +884,6 @@ async function connectWhatsApp(): Promise<void> {
         queue,
         onProcess: (groupJid, proc, containerName, groupFolder) => queue.registerProcess(groupJid, proc, containerName, groupFolder),
         sendMessage,
-        assistantName: ASSISTANT_NAME,
       });
       startIpcWatcher();
       queue.setProcessMessagesFn(processGroupMessages);
@@ -1117,7 +1121,6 @@ async function main(): Promise<void> {
       onProcess: (groupJid, proc, containerName, groupFolder) =>
         queue.registerProcess(groupJid, proc, containerName, groupFolder),
       sendMessage,
-      assistantName: ASSISTANT_NAME,
     });
     startIpcWatcher();
     queue.setProcessMessagesFn(processGroupMessages);

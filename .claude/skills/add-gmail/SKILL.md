@@ -246,13 +246,15 @@ cd .. && npm run build
 Wait for TypeScript compilation, then restart the service:
 
 ```bash
-launchctl kickstart -k gui/$(id -u)/com.nanoclaw
+launchctl kickstart -k gui/$(id -u)/com.nanoclaw  # macOS
+# Linux: systemctl --user restart nanoclaw
 ```
 
 Check that it started:
 
 ```bash
-sleep 2 && launchctl list | grep nanoclaw
+sleep 2 && launchctl list | grep nanoclaw  # macOS
+# Linux: systemctl --user status nanoclaw
 ```
 
 ### Step 5: Test Gmail Integration
@@ -476,7 +478,11 @@ Read `src/index.ts` and add the email polling infrastructure. First, add these i
 import { checkForNewEmails, sendEmailReply, getContextKey } from './email-channel.js';
 import { EMAIL_CHANNEL } from './config.js';
 import { isEmailProcessed, markEmailProcessed, markEmailResponded } from './db.js';
+```
 
+Then add the `startEmailLoop` function:
+
+```typescript
 async function startEmailLoop(): Promise<void> {
   if (!EMAIL_CHANNEL.enabled) {
     logger.info('Email channel disabled');
@@ -524,11 +530,12 @@ Respond to this email. Your response will be sent as an email reply.`;
     await new Promise(resolve => setTimeout(resolve, EMAIL_CHANNEL.pollIntervalMs));
   }
 }
+```
 
-Then find the `connectWhatsApp` function and add `startEmailLoop()` call after `startMessageLoop()`:
+Then add `startEmailLoop()` in the `main()` function, after `startMessageLoop()`:
 
 ```typescript
-// In the connection === 'open' block, after startMessageLoop():
+// In main(), after startMessageLoop():
 startEmailLoop();
 ```
 
@@ -574,7 +581,7 @@ async function runEmailAgent(
 
   if (output.newSessionId) {
     sessions[groupFolder] = output.newSessionId;
-    saveJson(path.join(DATA_DIR, 'sessions.json'), sessions);
+    setSession(groupFolder, output.newSessionId);
   }
 
   return output.status === 'success' ? output.result : null;
@@ -600,7 +607,7 @@ If you want the agent to be able to send emails proactively from within a sessio
 }
 ```
 
-Then add handling in `src/index.ts` in the `processTaskIpc` function or create a new IPC handler for email actions.
+Then add handling in `src/ipc.ts` in the `processTaskIpc` function or create a new IPC handler for email actions.
 
 ### Step 8: Create Email Group Memory
 
@@ -646,7 +653,8 @@ cd .. && npm run build
 Restart the service:
 
 ```bash
-launchctl kickstart -k gui/$(id -u)/com.nanoclaw
+launchctl kickstart -k gui/$(id -u)/com.nanoclaw  # macOS
+# Linux: systemctl --user restart nanoclaw
 ```
 
 Verify it started and check for email channel startup message:
@@ -721,5 +729,6 @@ To remove Gmail entirely:
    ```bash
    cd container && ./build.sh && cd ..
    npm run build
-   launchctl kickstart -k gui/$(id -u)/com.nanoclaw
+   launchctl kickstart -k gui/$(id -u)/com.nanoclaw  # macOS
+   # Linux: systemctl --user restart nanoclaw
    ```

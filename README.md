@@ -7,7 +7,10 @@
 </p>
 
 <p align="center">
-  <a href="https://discord.gg/VGWXrf8x"><img src="https://img.shields.io/discord/1470188214710046894?label=Discord&logo=discord&v=2" alt="Discord"></a>
+  <a href="https://nanoclaw.dev">nanoclaw.dev</a>&nbsp; • &nbsp;
+  <a href="README_zh.md">中文</a>&nbsp; • &nbsp;
+  <a href="https://discord.gg/VDdww8qS42"><img src="https://img.shields.io/discord/1470188214710046894?label=Discord&logo=discord&v=2" alt="Discord" valign="middle"></a>&nbsp; • &nbsp;
+  <a href="repo-tokens"><img src="repo-tokens/badge.svg" alt="34.9k tokens, 17% of context window" valign="middle"></a>
 </p>
 
 **New:** First AI assistant to support [Agent Swarms](https://code.claude.com/docs/en/agent-teams). Spin up teams of agents that collaborate in your chat.
@@ -21,7 +24,7 @@ NanoClaw gives you the same core functionality in a codebase you can understand 
 ## Quick Start
 
 ```bash
-git clone https://github.com/gavrielc/nanoclaw.git
+git clone https://github.com/qwibitai/nanoclaw.git
 cd nanoclaw
 claude
 ```
@@ -137,7 +140,10 @@ WhatsApp (baileys) --> SQLite --> Polling loop --> Container (Claude Agent SDK) 
 Single Node.js process. Agents execute in isolated Linux containers with mounted directories. Per-group message queue with concurrency control. IPC via filesystem.
 
 Key files:
-- `src/index.ts` - Main app: WhatsApp connection, message loop, IPC
+- `src/index.ts` - Orchestrator: state, message loop, agent invocation
+- `src/channels/whatsapp.ts` - WhatsApp connection, auth, send/receive
+- `src/ipc.ts` - IPC watcher and task processing
+- `src/router.ts` - Message formatting and outbound routing
 - `src/group-queue.ts` - Per-group queue with global concurrency limit
 - `src/container-runner.ts` - Spawns streaming agent containers
 - `src/task-scheduler.ts` - Runs scheduled tasks
@@ -150,13 +156,13 @@ Key files:
 
 Both WhatsApp and Telegram are supported. Run `/add-telegram` during setup to use Telegram instead (or alongside WhatsApp). Want Signal or something else? Fork it and add a skill.
 
-**Why Apple Container instead of Docker?**
+**Why Docker?**
 
-On macOS, Apple Container is lightweight, fast, and optimized for Apple silicon. But Docker is also fully supported—during `/setup`, you can choose which runtime to use. On Linux, Docker is used automatically.
+Docker provides cross-platform support (macOS and Linux) and a mature ecosystem. On macOS, you can optionally switch to Apple Container via `/convert-to-apple-container` for a lighter-weight native runtime.
 
 **Can I run this on Linux?**
 
-Yes. Run `/setup` and it will automatically configure Docker as the container runtime. Thanks to [@dotsetgreg](https://github.com/dotsetgreg) for contributing the `/convert-to-docker` skill.
+Yes. Docker is the default runtime and works on both macOS and Linux. Just run `/setup`.
 
 **Is this secure?**
 
@@ -184,7 +190,7 @@ This keeps the base system minimal and lets every user customize their installat
 
 ## Community
 
-Questions? Ideas? [Join the Discord](https://discord.gg/VGWXrf8x).
+Questions? Ideas? [Join the Discord](https://discord.gg/VDdww8qS42).
 
 ## License
 
