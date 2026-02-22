@@ -191,20 +191,26 @@ export async function applyUpdate(newCorePath: string): Promise<UpdateResult> {
         fs.unlinkSync(tmpCurrent);
 
         if (isGitRepo()) {
-          const baseContent = fs.readFileSync(basePath, 'utf-8');
-          const theirsContent = fs.readFileSync(newCoreSrcPath, 'utf-8');
+          try {
+            const baseContent = fs.readFileSync(basePath, 'utf-8');
+            const theirsContent = fs.readFileSync(newCoreSrcPath, 'utf-8');
 
-          setupRerereAdapter(relPath, baseContent, oursContent, theirsContent);
-          const autoResolved = runRerere(currentPath);
+            setupRerereAdapter(relPath, baseContent, oursContent, theirsContent);
+            const autoResolved = runRerere(currentPath);
 
-          if (autoResolved) {
-            execFileSync('git', ['add', relPath], { stdio: 'pipe' });
-            execSync('git rerere', { stdio: 'pipe' });
+            if (autoResolved) {
+              execFileSync('git', ['add', relPath], { stdio: 'pipe' });
+              execSync('git rerere', { stdio: 'pipe' });
+              cleanupMergeState(relPath);
+              continue;
+            }
+
             cleanupMergeState(relPath);
-            continue;
+          } catch {
+            // Rerere is an optimization only. On failure, keep explicit
+            // conflict markers and continue with standard conflict reporting.
+            cleanupMergeState(relPath);
           }
-
-          cleanupMergeState(relPath);
         }
 
         mergeConflicts.push(relPath);
@@ -365,4 +371,3 @@ export async function applyUpdate(newCorePath: string): Promise<UpdateResult> {
     releaseLock();
   }
 }
-

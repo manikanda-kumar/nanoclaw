@@ -20,9 +20,14 @@ describe('getPlatform', () => {
     expect(['macos', 'linux', 'unknown']).toContain(result);
   });
 
-  it('returns linux on this system', () => {
-    // This test runs on Linux
-    expect(getPlatform()).toBe('linux');
+  it('matches current runtime platform', () => {
+    const expected =
+      process.platform === 'darwin'
+        ? 'macos'
+        : process.platform === 'linux'
+          ? 'linux'
+          : 'unknown';
+    expect(getPlatform()).toBe(expected);
   });
 });
 
@@ -83,8 +88,15 @@ describe('getServiceManager', () => {
 
   it('returns systemd or none on Linux', () => {
     const result = getServiceManager();
-    // On Linux, should be systemd if available, else none
-    expect(['systemd', 'none']).toContain(result);
+    if (process.platform === 'linux') {
+      expect(['systemd', 'none']).toContain(result);
+      return;
+    }
+    if (process.platform === 'darwin') {
+      expect(result).toBe('launchd');
+      return;
+    }
+    expect(result).toBe('none');
   });
 });
 

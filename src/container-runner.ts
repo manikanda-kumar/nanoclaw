@@ -300,6 +300,7 @@ export async function runContainerAgent(
     let parseBuffer = '';
     let newSessionId: string | undefined;
     let outputChain = Promise.resolve();
+    let hadStreamingResult = false;
 
     container.stdout.on('data', (data) => {
       const chunk = data.toString();
@@ -336,6 +337,9 @@ export async function runContainerAgent(
             const parsed: ContainerOutput = JSON.parse(jsonStr);
             if (parsed.newSessionId) {
               newSessionId = parsed.newSessionId;
+            }
+            if (parsed.result) {
+              hadStreamingResult = true;
             }
             // Activity detected — reset the hard timeout
             resetTimeout();
@@ -411,6 +415,22 @@ export async function runContainerAgent(
           `Duration: ${duration}ms`,
           `Exit Code: ${code}`,
         ].join('\n'));
+
+        // If at least one result was already streamed, treat timeout as idle cleanup.
+        if (hadStreamingResult) {
+          logger.info(
+            { group: group.name, containerName, duration, code },
+            'Container timed out after output (idle cleanup)',
+          );
+          outputChain.then(() => {
+            resolve({
+              status: 'success',
+              result: null,
+              newSessionId,
+            });
+          });
+          return;
+        }
 
         logger.error(
           { group: group.name, containerName, duration, code },
