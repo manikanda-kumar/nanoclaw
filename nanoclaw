@@ -4,10 +4,40 @@
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PID_FILE="$SCRIPT_DIR/.nanoclaw.pid"
 LOG_FILE="$SCRIPT_DIR/logs/nanoclaw.log"
+LAUNCHD_LABEL="com.nanoclaw"
 
 cd "$SCRIPT_DIR"
 
 start() {
+  RUNNING_PID=""
+
+  # Fallback detection: existing NanoClaw process by command line.
+  if command -v pgrep >/dev/null 2>&1; then
+    RUNNING_PID=$(pgrep -f "$SCRIPT_DIR/dist/index.js" 2>/dev/null | head -n1)
+    if [ -n "$RUNNING_PID" ] && kill -0 "$RUNNING_PID" 2>/dev/null; then
+      echo "NanoClaw is already running (PID $RUNNING_PID)"
+      return 1
+    fi
+  fi
+
+  # More reliable launchd check for per-user agent.
+  if command -v launchctl >/dev/null 2>&1; then
+    LAUNCHD_PID=$(launchctl print "gui/$(id -u)/$LAUNCHD_LABEL" 2>/dev/null | awk '/^[[:space:]]*pid = / {print $3; exit}')
+    if [ -n "$LAUNCHD_PID" ] && [ "$LAUNCHD_PID" != "0" ]; then
+      echo "NanoClaw is already running via launchd (PID $LAUNCHD_PID)"
+      return 1
+    fi
+  fi
+
+  # Detect launchd-managed service to avoid duplicate bot polling/processes.
+  if command -v launchctl >/dev/null 2>&1; then
+    LAUNCHD_LIST_PID=$(launchctl list 2>/dev/null | awk -v label="$LAUNCHD_LABEL" '$3 == label {print $1}')
+    if [ -n "$LAUNCHD_LIST_PID" ] && [ "$LAUNCHD_LIST_PID" != "-" ] && [ "$LAUNCHD_LIST_PID" != "0" ]; then
+      echo "NanoClaw is already running via launchd (PID $LAUNCHD_LIST_PID)"
+      return 1
+    fi
+  fi
+
   if [ -f "$PID_FILE" ] && kill -0 "$(cat "$PID_FILE")" 2>/dev/null; then
     echo "NanoClaw is already running (PID $(cat "$PID_FILE"))"
     return 1
