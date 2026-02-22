@@ -70,7 +70,16 @@ export async function run(_args: string[]): Promise<void> {
 
 function setupLaunchd(projectRoot: string, nodePath: string, homeDir: string): void {
   const plistPath = path.join(homeDir, 'Library', 'LaunchAgents', 'com.nanoclaw.plist');
+  const bridgePlistPath = path.join(
+    homeDir,
+    'Library',
+    'LaunchAgents',
+    'com.nanoclaw.cdp-bridge.plist',
+  );
   fs.mkdirSync(path.dirname(plistPath), { recursive: true });
+  const cdpPort = process.env.CHROME_CDP_PORT || '9222';
+  const bridgePort = process.env.CHROME_CDP_BRIDGE_PORT || '9334';
+  const cdpUrl = process.env.CHROME_CDP_URL || `http://192.168.64.1:${bridgePort}`;
 
   const plist = `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -95,6 +104,10 @@ function setupLaunchd(projectRoot: string, nodePath: string, homeDir: string): v
         <string>/usr/local/bin:/usr/bin:/bin:${homeDir}/.local/bin</string>
         <key>HOME</key>
         <string>${homeDir}</string>
+        <key>CHROME_CDP_PORT</key>
+        <string>${cdpPort}</string>
+        <key>CHROME_CDP_URL</key>
+        <string>${cdpUrl}</string>
     </dict>
     <key>StandardOutPath</key>
     <string>${projectRoot}/logs/nanoclaw.log</string>
@@ -103,8 +116,45 @@ function setupLaunchd(projectRoot: string, nodePath: string, homeDir: string): v
 </dict>
 </plist>`;
 
+  const bridgePlist = `<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.nanoclaw.cdp-bridge</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>${nodePath}</string>
+        <string>${projectRoot}/scripts/cdp-bridge.mjs</string>
+    </array>
+    <key>WorkingDirectory</key>
+    <string>${projectRoot}</string>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/usr/local/bin:/usr/bin:/bin:${homeDir}/.local/bin</string>
+        <key>HOME</key>
+        <string>${homeDir}</string>
+        <key>CHROME_CDP_PORT</key>
+        <string>${cdpPort}</string>
+        <key>CHROME_CDP_BRIDGE_PORT</key>
+        <string>${bridgePort}</string>
+    </dict>
+    <key>StandardOutPath</key>
+    <string>${projectRoot}/logs/cdp-bridge.log</string>
+    <key>StandardErrorPath</key>
+    <string>${projectRoot}/logs/cdp-bridge.error.log</string>
+</dict>
+</plist>`;
+
   fs.writeFileSync(plistPath, plist);
   logger.info({ plistPath }, 'Wrote launchd plist');
+  fs.writeFileSync(bridgePlistPath, bridgePlist);
+  logger.info({ bridgePlistPath }, 'Wrote launchd CDP bridge plist');
 
   try {
     execSync(`launchctl load ${JSON.stringify(plistPath)}`, { stdio: 'ignore' });
@@ -112,12 +162,22 @@ function setupLaunchd(projectRoot: string, nodePath: string, homeDir: string): v
   } catch {
     logger.warn('launchctl load failed (may already be loaded)');
   }
+  try {
+    execSync(`launchctl load ${JSON.stringify(bridgePlistPath)}`, {
+      stdio: 'ignore',
+    });
+    logger.info('launchctl load cdp-bridge succeeded');
+  } catch {
+    logger.warn('launchctl load cdp-bridge failed (may already be loaded)');
+  }
 
   // Verify
   let serviceLoaded = false;
+  let cdpBridgeLoaded = false;
   try {
     const output = execSync('launchctl list', { encoding: 'utf-8' });
     serviceLoaded = output.includes('com.nanoclaw');
+    cdpBridgeLoaded = output.includes('com.nanoclaw.cdp-bridge');
   } catch {
     // launchctl list failed
   }
@@ -128,6 +188,9 @@ function setupLaunchd(projectRoot: string, nodePath: string, homeDir: string): v
     PROJECT_PATH: projectRoot,
     PLIST_PATH: plistPath,
     SERVICE_LOADED: serviceLoaded,
+    CDP_BRIDGE_PLIST_PATH: bridgePlistPath,
+    CDP_BRIDGE_LOADED: cdpBridgeLoaded,
+    CHROME_CDP_URL: cdpUrl,
     STATUS: 'success',
     LOG: 'logs/setup.log',
   });

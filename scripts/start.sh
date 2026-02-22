@@ -6,6 +6,7 @@ set -e
 
 CHROME_APP="/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
 CDP_PORT="${CHROME_CDP_PORT:-9222}"
+CDP_BIND_ADDRESS="${CHROME_CDP_BIND_ADDRESS:-0.0.0.0}"
 
 # --- Chrome Remote Debugging ---
 # Launches Chrome with remote debugging so container agents can reuse host browser sessions.
@@ -26,6 +27,7 @@ start_chrome_cdp() {
 
   echo "[nanoclaw] Starting Chrome with remote debugging on port ${CDP_PORT}..."
   "$CHROME_APP" \
+    --remote-debugging-address="${CDP_BIND_ADDRESS}" \
     --remote-debugging-port="${CDP_PORT}" \
     --no-first-run \
     --no-default-browser-check \

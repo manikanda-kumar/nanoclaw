@@ -165,7 +165,7 @@ Fields:
 
 ## 10. Setup launchd Service
 
-Create the plist file:
+Create the NanoClaw plist file:
 
 ```bash
 NODE_PATH=$(which node)
@@ -197,6 +197,10 @@ cat > ~/Library/LaunchAgents/com.nanoclaw.plist << EOF
         <string>${CONTAINER_PATH}:/usr/local/bin:/usr/bin:/bin:${HOME_PATH}/.local/bin</string>
         <key>HOME</key>
         <string>${HOME_PATH}</string>
+        <key>CHROME_CDP_PORT</key>
+        <string>9222</string>
+        <key>CHROME_CDP_URL</key>
+        <string>http://192.168.64.1:9334</string>
     </dict>
     <key>StandardOutPath</key>
     <string>${PROJECT_PATH}/logs/nanoclaw.log</string>
@@ -207,16 +211,59 @@ cat > ~/Library/LaunchAgents/com.nanoclaw.plist << EOF
 EOF
 ```
 
+Create the host CDP bridge plist (required for host session reuse from containers):
+
+```bash
+cat > ~/Library/LaunchAgents/com.nanoclaw.cdp-bridge.plist << EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.nanoclaw.cdp-bridge</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>${NODE_PATH}</string>
+        <string>${PROJECT_PATH}/scripts/cdp-bridge.mjs</string>
+    </array>
+    <key>WorkingDirectory</key>
+    <string>${PROJECT_PATH}</string>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>${CONTAINER_PATH}:/usr/local/bin:/usr/bin:/bin:${HOME_PATH}/.local/bin</string>
+        <key>HOME</key>
+        <string>${HOME_PATH}</string>
+        <key>CHROME_CDP_PORT</key>
+        <string>9222</string>
+        <key>CHROME_CDP_BRIDGE_PORT</key>
+        <string>9334</string>
+    </dict>
+    <key>StandardOutPath</key>
+    <string>${PROJECT_PATH}/logs/cdp-bridge.log</string>
+    <key>StandardErrorPath</key>
+    <string>${PROJECT_PATH}/logs/cdp-bridge.error.log</string>
+</dict>
+</plist>
+EOF
+```
+
 Build and start:
 ```bash
 npm run build
 mkdir -p logs
+launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.nanoclaw.cdp-bridge.plist
 launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.nanoclaw.plist
 ```
 
 Verify:
 ```bash
 launchctl list | grep nanoclaw
+tail -f logs/cdp-bridge.log
 tail -f logs/nanoclaw.log
 ```
 
@@ -231,12 +278,15 @@ Send a message to your bot in Telegram. In your main channel, no prefix is neede
 tail -f logs/nanoclaw.log
 
 # Restart service
+launchctl kickstart -k gui/$(id -u)/com.nanoclaw.cdp-bridge
 launchctl kickstart -k gui/$(id -u)/com.nanoclaw
 
 # Stop service
 launchctl bootout gui/$(id -u)/com.nanoclaw
+launchctl bootout gui/$(id -u)/com.nanoclaw.cdp-bridge
 
 # Start service
+launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.nanoclaw.cdp-bridge.plist
 launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.nanoclaw.plist
 ```
 
@@ -290,6 +340,27 @@ launchctl kickstart -k gui/$(id -u)/com.nanoclaw
 ### Container command not found
 
 The launchd PATH must include `/opt/homebrew/bin`. Regenerate the plist with the correct path (see step 10).
+
+### Host browser sessions not reused
+
+1. Verify bridge service is running:
+   ```bash
+   launchctl list | grep com.nanoclaw.cdp-bridge
+   ```
+2. Verify bridge endpoint:
+   ```bash
+   curl -s http://192.168.64.1:9334/json/version
+   ```
+3. Check bridge logs:
+   ```bash
+   tail -f logs/cdp-bridge.log
+   tail -f logs/cdp-bridge.error.log
+   ```
+4. Restart both launchd agents:
+   ```bash
+   launchctl kickstart -k gui/$(id -u)/com.nanoclaw.cdp-bridge
+   launchctl kickstart -k gui/$(id -u)/com.nanoclaw
+   ```
 
 ### Bot not responding in groups
 

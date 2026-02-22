@@ -161,7 +161,13 @@ function buildVolumeMounts(
   const envDir = path.join(DATA_DIR, 'env');
   fs.mkdirSync(envDir, { recursive: true });
   const envFile = path.join(projectRoot, '.env');
-  const allowedVars = ['CLAUDE_CODE_OAUTH_TOKEN', 'ANTHROPIC_API_KEY', 'CHROME_CDP_PORT'];
+  const allowedVars = [
+    'CLAUDE_CODE_OAUTH_TOKEN',
+    'ANTHROPIC_API_KEY',
+    'CHROME_CDP_PORT',
+    'CHROME_CDP_HOST',
+    'CHROME_CDP_URL',
+  ];
   const filteredLines: string[] = [];
 
   // Read from .env file

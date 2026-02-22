@@ -17,6 +17,8 @@ Both timers fire at the same time, so containers always exit via hard SIGKILL (c
 # 1. Is the service running?
 launchctl list | grep nanoclaw
 # Expected: PID  0  com.nanoclaw (PID = running, "-" = not running, non-zero exit = crashed)
+# Also check bridge helper:
+launchctl list | grep com.nanoclaw.cdp-bridge
 
 # 2. Any running containers?
 container ls --format '{{.Names}} {{.Status}}' 2>/dev/null | grep nanoclaw
@@ -26,6 +28,9 @@ container ls -a --format '{{.Names}} {{.Status}}' 2>/dev/null | grep nanoclaw
 
 # 4. Recent errors in service log?
 grep -E 'ERROR|WARN' logs/nanoclaw.log | tail -20
+
+# 4b. Recent bridge errors?
+tail -n 20 logs/cdp-bridge.error.log
 
 # 5. Is WhatsApp connected? (look for last connection event)
 grep -E 'Connected to WhatsApp|Connection closed|connection.*close' logs/nanoclaw.log | tail -5
@@ -127,6 +132,7 @@ npm run auth
 
 ```bash
 # Restart the service
+launchctl kickstart -k gui/$(id -u)/com.nanoclaw.cdp-bridge
 launchctl kickstart -k gui/$(id -u)/com.nanoclaw
 
 # View live logs
@@ -134,10 +140,26 @@ tail -f logs/nanoclaw.log
 
 # Stop the service (careful — running containers are detached, not killed)
 launchctl bootout gui/$(id -u)/com.nanoclaw
+launchctl bootout gui/$(id -u)/com.nanoclaw.cdp-bridge
 
 # Start the service
+launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.nanoclaw.cdp-bridge.plist
 launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.nanoclaw.plist
 
 # Rebuild after code changes
 npm run build && launchctl kickstart -k gui/$(id -u)/com.nanoclaw
+```
+
+## CDP Session Reuse Checks
+
+```bash
+# NanoClaw launchd env should include CHROME_CDP_URL
+launchctl print gui/$(id -u)/com.nanoclaw | grep CHROME_CDP_URL
+
+# Bridge should expose Chrome DevTools endpoint
+curl -s http://192.168.64.1:9334/json/version
+
+# If container path still fails, test from inside container
+container run --rm --entrypoint /bin/bash nanoclaw-agent:latest -lc \
+  'curl -sS --max-time 2 http://192.168.64.1:9334/json/version'
 ```
