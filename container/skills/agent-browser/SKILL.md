@@ -6,6 +6,12 @@ allowed-tools: Bash(agent-browser:*)
 
 # Browser Automation with agent-browser
 
+## Host browser session reuse
+
+agent-browser is pre-connected to the host's Chrome browser via CDP when available. This means all existing login sessions (Google, GitHub, etc.) are already available — no need to log in again. Just `agent-browser open <url>` and you'll be authenticated.
+
+If CDP connection is not available, agent-browser falls back to the built-in Chromium (no sessions).
+
 ## Quick start
 
 ```bash

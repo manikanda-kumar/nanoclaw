@@ -161,26 +161,39 @@ function buildVolumeMounts(
   const envDir = path.join(DATA_DIR, 'env');
   fs.mkdirSync(envDir, { recursive: true });
   const envFile = path.join(projectRoot, '.env');
+  const allowedVars = ['CLAUDE_CODE_OAUTH_TOKEN', 'ANTHROPIC_API_KEY', 'CHROME_CDP_PORT'];
+  const filteredLines: string[] = [];
+
+  // Read from .env file
   if (fs.existsSync(envFile)) {
     const envContent = fs.readFileSync(envFile, 'utf-8');
-    const allowedVars = ['CLAUDE_CODE_OAUTH_TOKEN', 'ANTHROPIC_API_KEY'];
-    const filteredLines = envContent.split('\n').filter((line) => {
+    for (const line of envContent.split('\n')) {
       const trimmed = line.trim();
-      if (!trimmed || trimmed.startsWith('#')) return false;
-      return allowedVars.some((v) => trimmed.startsWith(`${v}=`));
-    });
-
-    if (filteredLines.length > 0) {
-      fs.writeFileSync(
-        path.join(envDir, 'env'),
-        filteredLines.join('\n') + '\n',
-      );
-      mounts.push({
-        hostPath: envDir,
-        containerPath: '/workspace/env-dir',
-        readonly: true,
-      });
+      if (!trimmed || trimmed.startsWith('#')) continue;
+      if (allowedVars.some((v) => trimmed.startsWith(`${v}=`))) {
+        filteredLines.push(trimmed);
+      }
     }
+  }
+
+  // Also pick up allowed vars from process.env (e.g. CHROME_CDP_PORT from startup script)
+  const envVarNames = new Set(filteredLines.map((l) => l.split('=')[0]));
+  for (const v of allowedVars) {
+    if (!envVarNames.has(v) && process.env[v]) {
+      filteredLines.push(`${v}=${process.env[v]}`);
+    }
+  }
+
+  if (filteredLines.length > 0) {
+    fs.writeFileSync(
+      path.join(envDir, 'env'),
+      filteredLines.join('\n') + '\n',
+    );
+    mounts.push({
+      hostPath: envDir,
+      containerPath: '/workspace/env-dir',
+      readonly: true,
+    });
   }
 
   // Mount agent-runner source from host — recompiled on container startup.
