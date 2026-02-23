@@ -1,0 +1,164 @@
+#!/bin/bash
+# camofox — CLI wrapper for Camofox anti-detection browser REST API
+# Usage: camofox <command> [args...]
+
+set -euo pipefail
+
+CAMOFOX_URL="${CAMOFOX_URL:-http://host.containers.internal:9377}"
+CAMOFOX_API_KEY="${CAMOFOX_API_KEY:-}"
+TAB_FILE="/tmp/.camofox-tab"
+
+# --- Helpers ---
+
+api() {
+  local method="$1" endpoint="$2"
+  shift 2
+  local args=(-sf -X "$method" "${CAMOFOX_URL}${endpoint}")
+  if [ -n "$CAMOFOX_API_KEY" ]; then
+    args+=(-H "Authorization: Bearer ${CAMOFOX_API_KEY}")
+  fi
+  args+=(-H "Content-Type: application/json" "$@")
+  curl "${args[@]}"
+}
+
+get_tab() {
+  if [ ! -f "$TAB_FILE" ]; then
+    echo "Error: no active tab. Run 'camofox open <url>' first." >&2
+    exit 1
+  fi
+  cat "$TAB_FILE"
+}
+
+save_tab() {
+  echo "$1" > "$TAB_FILE"
+}
+
+# --- Commands ---
+
+cmd_open() {
+  local url="$1"
+  local result
+  result=$(api POST /tabs -d "{\"url\":\"${url}\"}")
+  local tab_id
+  tab_id=$(echo "$result" | grep -o '"id":"[^"]*"' | head -1 | cut -d'"' -f4)
+  if [ -z "$tab_id" ]; then
+    echo "Error: failed to open tab" >&2
+    echo "$result" >&2
+    exit 1
+  fi
+  save_tab "$tab_id"
+  # Return snapshot
+  api GET "/tabs/${tab_id}/snapshot"
+  echo
+}
+
+cmd_snapshot() {
+  local tab_id
+  tab_id=$(get_tab)
+  local endpoint="/tabs/${tab_id}/snapshot"
+  local interactive=""
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      -i) interactive="?interactive=true"; shift ;;
+      *) shift ;;
+    esac
+  done
+  api GET "${endpoint}${interactive}"
+  echo
+}
+
+cmd_click() {
+  local tab_id ref="$1"
+  tab_id=$(get_tab)
+  api POST "/tabs/${tab_id}/click" -d "{\"ref\":\"${ref}\"}"
+  echo
+}
+
+cmd_type() {
+  local tab_id ref="$1" text="$2"
+  tab_id=$(get_tab)
+  api POST "/tabs/${tab_id}/type" -d "{\"ref\":\"${ref}\",\"text\":\"${text}\"}"
+  echo
+}
+
+cmd_scroll() {
+  local tab_id direction="${1:-down}"
+  tab_id=$(get_tab)
+  api POST "/tabs/${tab_id}/scroll" -d "{\"direction\":\"${direction}\"}"
+  echo
+}
+
+cmd_screenshot() {
+  local tab_id
+  tab_id=$(get_tab)
+  local outpath="${1:-/tmp/camofox-screenshot.png}"
+  curl -sf -o "$outpath" -X GET "${CAMOFOX_URL}/tabs/${tab_id}/screenshot" \
+    ${CAMOFOX_API_KEY:+-H "Authorization: Bearer ${CAMOFOX_API_KEY}"}
+  echo "$outpath"
+}
+
+cmd_close() {
+  local tab_id
+  tab_id=$(get_tab)
+  api DELETE "/tabs/${tab_id}"
+  rm -f "$TAB_FILE"
+  echo "Tab closed"
+}
+
+cmd_cookies() {
+  local tab_id file="$1"
+  tab_id=$(get_tab)
+  local session_id
+  session_id=$(echo "$tab_id" | cut -d'-' -f1)
+  if [ -f "$file" ]; then
+    # Import cookies from file
+    api POST "/sessions/${session_id}/cookies" -d @"$file"
+  else
+    # Export cookies to file
+    api GET "/sessions/${session_id}/cookies" > "$file"
+  fi
+  echo
+}
+
+cmd_back() {
+  local tab_id
+  tab_id=$(get_tab)
+  api POST "/tabs/${tab_id}/back"
+  echo
+}
+
+cmd_forward() {
+  local tab_id
+  tab_id=$(get_tab)
+  api POST "/tabs/${tab_id}/forward"
+  echo
+}
+
+# --- Dispatch ---
+
+if [ $# -eq 0 ]; then
+  echo "Usage: camofox <command> [args...]"
+  echo "Commands: open, snapshot, click, type, scroll, screenshot, close, cookies, back, forward"
+  exit 1
+fi
+
+command="$1"
+shift
+
+case "$command" in
+  open)       cmd_open "$@" ;;
+  snapshot)   cmd_snapshot "$@" ;;
+  click)      cmd_click "$@" ;;
+  type)       cmd_type "$@" ;;
+  scroll)     cmd_scroll "$@" ;;
+  screenshot) cmd_screenshot "$@" ;;
+  close)      cmd_close "$@" ;;
+  cookies)    cmd_cookies "$@" ;;
+  back)       cmd_back "$@" ;;
+  forward)    cmd_forward "$@" ;;
+  *)
+    echo "Unknown command: $command" >&2
+    echo "Commands: open, snapshot, click, type, scroll, screenshot, close, cookies, back, forward" >&2
+    exit 1
+    ;;
+esac

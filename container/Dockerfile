@@ -32,6 +32,10 @@ ENV PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH=/usr/bin/chromium
 # Install agent-browser and claude-code globally
 RUN npm install -g agent-browser @anthropic-ai/claude-code
 
+# Install camofox CLI wrapper
+COPY skills/camofox/camofox /usr/local/bin/camofox
+RUN chmod +x /usr/local/bin/camofox
+
 # Create app directory
 WORKDIR /app
 

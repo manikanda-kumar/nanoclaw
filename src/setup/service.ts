@@ -76,10 +76,18 @@ function setupLaunchd(projectRoot: string, nodePath: string, homeDir: string): v
     'LaunchAgents',
     'com.nanoclaw.cdp-bridge.plist',
   );
+  const camofoxPlistPath = path.join(
+    homeDir,
+    'Library',
+    'LaunchAgents',
+    'com.nanoclaw.camofox.plist',
+  );
   fs.mkdirSync(path.dirname(plistPath), { recursive: true });
   const cdpPort = process.env.CHROME_CDP_PORT || '9222';
   const bridgePort = process.env.CHROME_CDP_BRIDGE_PORT || '9334';
   const cdpUrl = process.env.CHROME_CDP_URL || `http://192.168.64.1:${bridgePort}`;
+  const camofoxPort = process.env.CAMOFOX_PORT || '9377';
+  const camofoxApiKey = process.env.CAMOFOX_API_KEY || '';
 
   const plist = `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -151,10 +159,47 @@ function setupLaunchd(projectRoot: string, nodePath: string, homeDir: string): v
 </dict>
 </plist>`;
 
+  const camofoxPlist = `<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.nanoclaw.camofox</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>${projectRoot}/scripts/camofox.sh</string>
+    </array>
+    <key>WorkingDirectory</key>
+    <string>${projectRoot}</string>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/usr/local/bin:/usr/bin:/bin:${homeDir}/.local/bin</string>
+        <key>HOME</key>
+        <string>${homeDir}</string>
+        <key>CAMOFOX_PORT</key>
+        <string>${camofoxPort}</string>
+        <key>CAMOFOX_API_KEY</key>
+        <string>${camofoxApiKey}</string>
+    </dict>
+    <key>StandardOutPath</key>
+    <string>${projectRoot}/logs/camofox.log</string>
+    <key>StandardErrorPath</key>
+    <string>${projectRoot}/logs/camofox.error.log</string>
+</dict>
+</plist>`;
+
   fs.writeFileSync(plistPath, plist);
   logger.info({ plistPath }, 'Wrote launchd plist');
   fs.writeFileSync(bridgePlistPath, bridgePlist);
   logger.info({ bridgePlistPath }, 'Wrote launchd CDP bridge plist');
+  fs.writeFileSync(camofoxPlistPath, camofoxPlist);
+  logger.info({ camofoxPlistPath }, 'Wrote launchd camofox plist');
 
   try {
     execSync(`launchctl load ${JSON.stringify(plistPath)}`, { stdio: 'ignore' });
@@ -170,14 +215,24 @@ function setupLaunchd(projectRoot: string, nodePath: string, homeDir: string): v
   } catch {
     logger.warn('launchctl load cdp-bridge failed (may already be loaded)');
   }
+  try {
+    execSync(`launchctl load ${JSON.stringify(camofoxPlistPath)}`, {
+      stdio: 'ignore',
+    });
+    logger.info('launchctl load camofox succeeded');
+  } catch {
+    logger.warn('launchctl load camofox failed (may already be loaded)');
+  }
 
   // Verify
   let serviceLoaded = false;
   let cdpBridgeLoaded = false;
+  let camofoxLoaded = false;
   try {
     const output = execSync('launchctl list', { encoding: 'utf-8' });
     serviceLoaded = output.includes('com.nanoclaw');
     cdpBridgeLoaded = output.includes('com.nanoclaw.cdp-bridge');
+    camofoxLoaded = output.includes('com.nanoclaw.camofox');
   } catch {
     // launchctl list failed
   }
@@ -190,6 +245,8 @@ function setupLaunchd(projectRoot: string, nodePath: string, homeDir: string): v
     SERVICE_LOADED: serviceLoaded,
     CDP_BRIDGE_PLIST_PATH: bridgePlistPath,
     CDP_BRIDGE_LOADED: cdpBridgeLoaded,
+    CAMOFOX_PLIST_PATH: camofoxPlistPath,
+    CAMOFOX_LOADED: camofoxLoaded,
     CHROME_CDP_URL: cdpUrl,
     STATUS: 'success',
     LOG: 'logs/setup.log',

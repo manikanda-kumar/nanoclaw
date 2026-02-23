@@ -167,6 +167,8 @@ function buildVolumeMounts(
     'CHROME_CDP_PORT',
     'CHROME_CDP_HOST',
     'CHROME_CDP_URL',
+    'CAMOFOX_URL',
+    'CAMOFOX_API_KEY',
   ];
   const filteredLines: string[] = [];
 
