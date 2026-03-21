@@ -168,6 +168,46 @@ export async function connectTelegram(botToken: string): Promise<void> {
   });
 }
 
+/**
+ * Convert GitHub-flavored markdown to Telegram-compatible Markdown.
+ * Telegram's legacy Markdown only supports: *bold*, _italic_, `code`, ```pre```, [link](url)
+ */
+function toTelegramMarkdown(text: string): string {
+  // Protect code blocks — strip language hints (```bash → ```)
+  const codeBlocks: string[] = [];
+  let result = text.replace(/```\w*\n([\s\S]*?)```/g, (_match, code) => {
+    const placeholder = `\x00CB${codeBlocks.length}\x00`;
+    codeBlocks.push(`\`\`\`\n${code}\`\`\``);
+    return placeholder;
+  });
+
+  // Protect inline code
+  const inlineCode: string[] = [];
+  result = result.replace(/`([^`]+)`/g, (_match, code) => {
+    const placeholder = `\x00IC${inlineCode.length}\x00`;
+    inlineCode.push(`\`${code}\``);
+    return placeholder;
+  });
+
+  // Convert **bold** → *bold* (Telegram uses single asterisks for bold)
+  result = result.replace(/\*\*(.+?)\*\*/g, '*$1*');
+
+  // Convert ## Headers → *Header* (bold)
+  result = result.replace(/^#{1,6}\s+(.+)$/gm, '*$1*');
+
+  // Remove horizontal rules
+  result = result.replace(/^-{3,}$/gm, '');
+
+  // Restore inline code and code blocks
+  result = result.replace(/\x00IC(\d+)\x00/g, (_match, i) => inlineCode[parseInt(i)]);
+  result = result.replace(/\x00CB(\d+)\x00/g, (_match, i) => codeBlocks[parseInt(i)]);
+
+  // Collapse 3+ consecutive blank lines into 2
+  result = result.replace(/\n{3,}/g, '\n\n');
+
+  return result.trim();
+}
+
 export async function sendTelegramMessage(
   chatId: string,
   text: string,
@@ -179,14 +219,20 @@ export async function sendTelegramMessage(
 
   try {
     const numericId = chatId.replace(/^tg:/, '');
+    const formatted = toTelegramMarkdown(text);
 
     // Telegram has a 4096 character limit per message — split if needed
     const MAX_LENGTH = 4096;
-    if (text.length <= MAX_LENGTH) {
-      await bot.api.sendMessage(numericId, text);
-    } else {
-      for (let i = 0; i < text.length; i += MAX_LENGTH) {
-        await bot.api.sendMessage(numericId, text.slice(i, i + MAX_LENGTH));
+    const chunks: string[] = [];
+    for (let i = 0; i < formatted.length; i += MAX_LENGTH) {
+      chunks.push(formatted.slice(i, i + MAX_LENGTH));
+    }
+    for (const chunk of chunks) {
+      try {
+        await bot.api.sendMessage(numericId, chunk, { parse_mode: 'Markdown' });
+      } catch {
+        // Fallback to plain text if Telegram rejects the markdown
+        await bot.api.sendMessage(numericId, chunk);
       }
     }
     logger.info({ chatId, length: text.length }, 'Telegram message sent');
