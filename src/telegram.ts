@@ -169,15 +169,16 @@ export async function connectTelegram(botToken: string): Promise<void> {
 }
 
 /**
- * Convert GitHub-flavored markdown to Telegram-compatible Markdown.
- * Telegram's legacy Markdown only supports: *bold*, _italic_, `code`, ```pre```, [link](url)
+ * Convert GitHub-flavored markdown to Telegram HTML.
+ * HTML mode is far more forgiving than Telegram's legacy Markdown —
+ * no unbalanced delimiter issues, no strict parser rejections.
  */
-export function toTelegramMarkdown(text: string): string {
-  // Protect code blocks — strip language hints (```bash → ```)
+export function toTelegramHtml(text: string): string {
+  // Protect code blocks first — extract and replace with placeholders
   const codeBlocks: string[] = [];
   let result = text.replace(/```\w*\n([\s\S]*?)```/g, (_match, code) => {
     const placeholder = `\x00CB${codeBlocks.length}\x00`;
-    codeBlocks.push(`\`\`\`\n${code}\`\`\``);
+    codeBlocks.push(code);
     return placeholder;
   });
 
@@ -185,48 +186,45 @@ export function toTelegramMarkdown(text: string): string {
   const inlineCode: string[] = [];
   result = result.replace(/`([^`]+)`/g, (_match, code) => {
     const placeholder = `\x00IC${inlineCode.length}\x00`;
-    inlineCode.push(`\`${code}\``);
+    inlineCode.push(code);
     return placeholder;
   });
 
-  // Convert **bold** → *bold* (Telegram uses single asterisks for bold)
-  result = result.replace(/\*\*(.+?)\*\*/g, '*$1*');
+  // Escape HTML special chars in remaining text (not inside code)
+  result = result
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
 
-  // Convert ## Headers → *Header* (bold)
-  // Strip any existing *bold* wrapping inside the header to avoid ***nested***
-  result = result.replace(/^#{1,6}\s+(.+)$/gm, (_match, content) => {
-    const stripped = content.replace(/^\*(.+)\*$/, '$1');
-    return `*${stripped}*`;
-  });
+  // Convert **bold** → <b>bold</b>
+  result = result.replace(/\*\*(.+?)\*\*/g, '<b>$1</b>');
+
+  // Convert *bold* → <b>bold</b> (Telegram convention: single * = bold)
+  result = result.replace(/\*(.+?)\*/g, '<b>$1</b>');
+
+  // Convert _italic_ → <i>italic</i>
+  result = result.replace(/(?<!\w)_(.+?)_(?!\w)/g, '<i>$1</i>');
+
+  // Convert ## Headers → <b>Header</b>
+  result = result.replace(/^#{1,6}\s+(.+)$/gm, '<b>$1</b>');
+
+  // Convert [text](url) → <a href="url">text</a>
+  result = result.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2">$1</a>');
 
   // Remove horizontal rules
   result = result.replace(/^-{3,}$/gm, '');
 
-  // Fix unbalanced special chars per line (breaks Telegram Markdown parsing)
-  result = result.split('\n').map((line) => {
-    // Skip placeholder lines (code blocks/inline code)
-    if (line.includes('\x00')) return line;
+  // Restore inline code → <code>
+  result = result.replace(/\x00IC(\d+)\x00/g, (_match, i) => {
+    const code = inlineCode[parseInt(i)].replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    return `<code>${code}</code>`;
+  });
 
-    // Unbalanced * → replace last with Unicode ∗
-    const asterisks = line.match(/(?<!\*)\*(?!\*)/g);
-    if (asterisks && asterisks.length % 2 !== 0) {
-      const lastIdx = line.lastIndexOf('*');
-      line = line.slice(0, lastIdx) + '∗' + line.slice(lastIdx + 1);
-    }
-
-    // Unbalanced _ → replace last with Unicode ＿
-    const underscores = line.match(/_/g);
-    if (underscores && underscores.length % 2 !== 0) {
-      const lastIdx = line.lastIndexOf('_');
-      line = line.slice(0, lastIdx) + '＿' + line.slice(lastIdx + 1);
-    }
-
-    return line;
-  }).join('\n');
-
-  // Restore inline code and code blocks
-  result = result.replace(/\x00IC(\d+)\x00/g, (_match, i) => inlineCode[parseInt(i)]);
-  result = result.replace(/\x00CB(\d+)\x00/g, (_match, i) => codeBlocks[parseInt(i)]);
+  // Restore code blocks → <pre>
+  result = result.replace(/\x00CB(\d+)\x00/g, (_match, i) => {
+    const code = codeBlocks[parseInt(i)].replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    return `<pre>${code}</pre>`;
+  });
 
   // Collapse 3+ consecutive blank lines into 2
   result = result.replace(/\n{3,}/g, '\n\n');
@@ -245,7 +243,7 @@ export async function sendTelegramMessage(
 
   try {
     const numericId = chatId.replace(/^tg:/, '');
-    const formatted = toTelegramMarkdown(text);
+    const formatted = toTelegramHtml(text);
 
     // Telegram has a 4096 character limit per message — split if needed
     const MAX_LENGTH = 4096;
@@ -255,9 +253,9 @@ export async function sendTelegramMessage(
     }
     for (const chunk of chunks) {
       try {
-        await bot.api.sendMessage(numericId, chunk, { parse_mode: 'Markdown' });
+        await bot.api.sendMessage(numericId, chunk, { parse_mode: 'HTML' });
       } catch {
-        // Fallback to plain text if Telegram rejects the markdown
+        // Fallback to plain text if Telegram rejects the HTML
         await bot.api.sendMessage(numericId, chunk);
       }
     }

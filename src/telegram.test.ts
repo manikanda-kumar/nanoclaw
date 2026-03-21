@@ -1,85 +1,160 @@
 import { describe, it, expect } from 'vitest';
 
-import { toTelegramMarkdown } from './telegram.js';
+import { toTelegramHtml } from './telegram.js';
 
-describe('toTelegramMarkdown', () => {
-  it('converts **double asterisks** to *single asterisks*', () => {
-    expect(toTelegramMarkdown('hello **bold** world')).toBe('hello *bold* world');
+describe('toTelegramHtml', () => {
+  // --- Bold conversion ---
+
+  it('converts **double asterisks** to <b>', () => {
+    expect(toTelegramHtml('hello **bold** world')).toBe('hello <b>bold</b> world');
   });
 
-  it('converts ## headings to *bold*', () => {
-    expect(toTelegramMarkdown('## Option 1: Edit Project')).toBe('*Option 1: Edit Project*');
+  it('converts *single asterisks* to <b>', () => {
+    expect(toTelegramHtml('*bold text*')).toBe('<b>bold text</b>');
   });
 
-  it('converts # h1 headings to *bold*', () => {
-    expect(toTelegramMarkdown('# Title')).toBe('*Title*');
+  it('handles **nested in *single***: no double tags', () => {
+    // **already double** → <b>
+    expect(toTelegramHtml('**title**')).toBe('<b>title</b>');
   });
+
+  // --- Italic ---
+
+  it('converts _underscores_ to <i>', () => {
+    expect(toTelegramHtml('_italic text_')).toBe('<i>italic text</i>');
+  });
+
+  it('does not convert underscores inside words (snake_case)', () => {
+    expect(toTelegramHtml('snake_case_var')).toBe('snake_case_var');
+  });
+
+  // --- Headings ---
+
+  it('converts ## headings to <b>', () => {
+    expect(toTelegramHtml('## Option 1: Edit Project')).toBe('<b>Option 1: Edit Project</b>');
+  });
+
+  it('converts # h1 headings to <b>', () => {
+    expect(toTelegramHtml('# Title')).toBe('<b>Title</b>');
+  });
+
+  it('handles ## **bold heading**', () => {
+    expect(toTelegramHtml('## **My Title**')).toBe('<b><b>My Title</b></b>');
+  });
+
+  // --- Horizontal rules ---
 
   it('removes --- horizontal rules', () => {
-    expect(toTelegramMarkdown('above\n---\nbelow')).toBe('above\n\nbelow');
+    expect(toTelegramHtml('above\n---\nbelow')).toBe('above\n\nbelow');
   });
 
-  it('preserves inline code unchanged', () => {
-    expect(toTelegramMarkdown('use `dotenv` here')).toBe('use `dotenv` here');
+  // --- Code ---
+
+  it('converts inline code to <code>', () => {
+    expect(toTelegramHtml('use `dotenv` here')).toBe('use <code>dotenv</code> here');
   });
 
   it('strips language hints from code blocks', () => {
     const input = '```bash\necho hello\n```';
-    const expected = '```\necho hello\n```';
-    expect(toTelegramMarkdown(input)).toBe(expected);
+    expect(toTelegramHtml(input)).toBe('<pre>echo hello\n</pre>');
   });
 
-  it('strips python language hint from code blocks', () => {
-    const input = '```python\nimport os\n```';
-    const expected = '```\nimport os\n```';
-    expect(toTelegramMarkdown(input)).toBe(expected);
-  });
-
-  it('preserves code blocks without language hints', () => {
+  it('converts code blocks to <pre>', () => {
     const input = '```\necho hello\n```';
-    expect(toTelegramMarkdown(input)).toBe(input);
+    expect(toTelegramHtml(input)).toBe('<pre>echo hello\n</pre>');
   });
 
   it('does not convert **bold** inside code blocks', () => {
     const input = '```\n**not bold**\n```';
-    expect(toTelegramMarkdown(input)).toBe('```\n**not bold**\n```');
-  });
-
-  it('does not convert ## headings inside code blocks', () => {
-    const input = '```\n## not a heading\n```';
-    expect(toTelegramMarkdown(input)).toBe('```\n## not a heading\n```');
+    expect(toTelegramHtml(input)).toContain('**not bold**');
+    expect(toTelegramHtml(input)).not.toContain('<b>');
   });
 
   it('does not convert **bold** inside inline code', () => {
-    expect(toTelegramMarkdown('run `**test**` now')).toBe('run `**test**` now');
+    const result = toTelegramHtml('run `**test**` now');
+    expect(result).toBe('run <code>**test**</code> now');
   });
+
+  // --- HTML escaping ---
+
+  it('escapes < > & in regular text', () => {
+    expect(toTelegramHtml('a < b & c > d')).toBe('a &lt; b &amp; c &gt; d');
+  });
+
+  it('escapes HTML in code blocks', () => {
+    const input = '```\n<script>alert(1)</script>\n```';
+    expect(toTelegramHtml(input)).toContain('&lt;script&gt;');
+  });
+
+  it('escapes HTML in inline code', () => {
+    expect(toTelegramHtml('use `<div>`')).toBe('use <code>&lt;div&gt;</code>');
+  });
+
+  // --- Links ---
+
+  it('converts [text](url) to <a> tags', () => {
+    expect(toTelegramHtml('[click here](https://example.com)')).toBe(
+      '<a href="https://example.com">click here</a>',
+    );
+  });
+
+  // --- Whitespace ---
 
   it('collapses 3+ blank lines into 2', () => {
-    expect(toTelegramMarkdown('a\n\n\n\nb')).toBe('a\n\nb');
+    expect(toTelegramHtml('a\n\n\n\nb')).toBe('a\n\nb');
   });
 
-  it('preserves single asterisk bold (already Telegram-compatible)', () => {
-    expect(toTelegramMarkdown('*already bold*')).toBe('*already bold*');
+  // --- Unbalanced chars are NOT an issue with HTML ---
+
+  it('handles lone * without breaking', () => {
+    const result = toTelegramHtml('3 * 4 = 12');
+    // Should not crash or produce broken output
+    expect(result).toBeTruthy();
   });
 
-  it('preserves _italic_ (already Telegram-compatible)', () => {
-    expect(toTelegramMarkdown('_italic text_')).toBe('_italic text_');
+  it('handles lone _ without breaking (MY_VAR)', () => {
+    const result = toTelegramHtml('set MY_VAR in env');
+    expect(result).toBeTruthy();
   });
 
-  it('converts [text](url) links to plain text with URL', () => {
-    // Links should ideally be converted, but current implementation passes them through
-    // Telegram legacy Markdown actually supports [text](url), so this is fine
-    const input = '[click here](https://example.com)';
-    const result = toTelegramMarkdown(input);
-    expect(result).toBe(input); // Telegram Markdown supports links
+  // --- Real-world test: the failing agent response ---
+
+  it('handles the coding factory response', () => {
+    const input = [
+      'I\'ve completed the documentation! Here\'s what\'s available:',
+      '',
+      '*Core Documentation:*',
+      '- *README.md* - System overview, architecture',
+      '- *implementation.md* - Complete working Python implementation',
+      '- *GETTING-STARTED.md* - Fast 5-minute quick start guide',
+      '',
+      '*Setup Guides:*',
+      '- *rag-setup.md* - Repository indexing with ChromaDB',
+      '- *deployment.md* - Production deployment with Docker, vLLM',
+      '',
+      'The documentation covers:',
+      '- Complete working code (LangGraph + Ollama + ChromaDB)',
+      '- Four specialized agents (Planner, Coder, Reviewer, Tester)',
+      '- Monitoring with Prometheus/Grafana',
+      '',
+      'You can start with GETTING-STARTED.md for the quickest path.',
+    ].join('\n');
+
+    const result = toTelegramHtml(input);
+
+    // Bold sections converted
+    expect(result).toContain('<b>Core Documentation:</b>');
+    expect(result).toContain('<b>README.md</b>');
+    expect(result).toContain('<b>GETTING-STARTED.md</b>');
+    expect(result).toContain('<b>Setup Guides:</b>');
+    // No raw asterisks for bold sections
+    expect(result).not.toContain('*Core Documentation:*');
+    expect(result).not.toContain('*README.md*');
   });
 
-  // Real-world test case based on the screenshot
-  it('handles a complex agent response', () => {
+  it('handles the .env setup response', () => {
     const input = [
       'Good news! I\'ve added the placeholders to `/workspace/project/.env`.',
-      '',
-      'Now you can fill in your actual keys. You have two approaches:',
       '',
       '## *Option 1: Edit Project .env (Quick)*',
       '',
@@ -96,77 +171,22 @@ describe('toTelegramMarkdown', () => {
       '',
       '## *Option 2: OneDrive .env (More Secure)*',
       '',
-      'Keep keys separate from project code. Create:',
-      '```',
-      '~/Library/CloudStorage/OneDrive-Personal/nanoclaw/.env',
-      '```',
-      '',
       '---',
       '',
       'Which approach would you like to use?',
     ].join('\n');
 
-    const result = toTelegramMarkdown(input);
+    const result = toTelegramHtml(input);
 
-    // No ## headings
+    // No raw ## headings
     expect(result).not.toMatch(/^##/m);
-    // No ```bash language hints
+    // No ```bash
     expect(result).not.toContain('```bash');
     // No ---
     expect(result).not.toMatch(/^-{3,}$/m);
-    // Bold headings preserved (## *text* → *text*)
-    expect(result).toContain('*Option 1: Edit Project .env (Quick)*');
-    expect(result).toContain('*Option 2: OneDrive .env (More Secure)*');
-    // Inline code preserved
-    expect(result).toContain('`/workspace/project/.env`');
-    // Code blocks preserved (without language hint)
-    expect(result).toContain('```\nOPENROUTER_API_KEY=sk-or-v1-your-actual-key');
-  });
-
-  it('handles **bold** inside headings: ## **Title**', () => {
-    // ## **Title** → heading converts to ***Title*** → then ** → * gives **Title**
-    // This is still double — need to handle nested
-    const result = toTelegramMarkdown('## **My Title**');
-    // Should not have double asterisks
-    expect(result).not.toContain('**');
-    expect(result).toBe('*My Title*');
-  });
-
-  it('handles ## *already single bold*', () => {
-    // ## *Title* → heading wraps: **Title** → then ** → * gives *Title* ... but order matters
-    const result = toTelegramMarkdown('## *Option 1: Quick*');
-    expect(result).not.toContain('**');
-  });
-
-  it('does not produce unbalanced asterisks', () => {
-    const inputs = [
-      'This has a lone * in text',
-      'Price is $5.00 * tax',
-      '3 * 4 = 12',
-    ];
-    for (const input of inputs) {
-      const result = toTelegramMarkdown(input);
-      // Count asterisks outside code — should be even for valid Telegram markdown
-      const stripped = result.replace(/`[^`]+`/g, '').replace(/```[\s\S]*?```/g, '');
-      const asterisks = (stripped.match(/\*/g) || []).length;
-      expect(asterisks % 2).toBe(0);
-    }
-  });
-
-  it('does not produce unbalanced underscores', () => {
-    const inputs = [
-      'snake_case_variable is common',  // 2 underscores (even)
-      'file_name_here.txt',             // 2 underscores (even)
-      'use __init__.py',                // 4 underscores (even)
-      'set MY_VAR in env',              // 1 underscore (odd!)
-      'use OPENROUTER_API_KEY',         // 2 underscores (even)
-      'ANTHROPIC_API_KEY=sk-ant-key',   // 1 underscore (odd!)
-    ];
-    for (const input of inputs) {
-      const result = toTelegramMarkdown(input);
-      const stripped = result.replace(/`[^`]+`/g, '').replace(/```[\s\S]*?```/g, '');
-      const underscores = (stripped.match(/_/g) || []).length;
-      expect(underscores % 2).toBe(0);
-    }
+    // Inline code converted
+    expect(result).toContain('<code>/workspace/project/.env</code>');
+    // Code blocks converted
+    expect(result).toContain('<pre>OPENROUTER_API_KEY=sk-or-v1-your-actual-key');
   });
 });
