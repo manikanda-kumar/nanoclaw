@@ -172,7 +172,7 @@ export async function connectTelegram(botToken: string): Promise<void> {
  * Convert GitHub-flavored markdown to Telegram-compatible Markdown.
  * Telegram's legacy Markdown only supports: *bold*, _italic_, `code`, ```pre```, [link](url)
  */
-function toTelegramMarkdown(text: string): string {
+export function toTelegramMarkdown(text: string): string {
   // Protect code blocks — strip language hints (```bash → ```)
   const codeBlocks: string[] = [];
   let result = text.replace(/```\w*\n([\s\S]*?)```/g, (_match, code) => {
@@ -193,10 +193,36 @@ function toTelegramMarkdown(text: string): string {
   result = result.replace(/\*\*(.+?)\*\*/g, '*$1*');
 
   // Convert ## Headers → *Header* (bold)
-  result = result.replace(/^#{1,6}\s+(.+)$/gm, '*$1*');
+  // Strip any existing *bold* wrapping inside the header to avoid ***nested***
+  result = result.replace(/^#{1,6}\s+(.+)$/gm, (_match, content) => {
+    const stripped = content.replace(/^\*(.+)\*$/, '$1');
+    return `*${stripped}*`;
+  });
 
   // Remove horizontal rules
   result = result.replace(/^-{3,}$/gm, '');
+
+  // Fix unbalanced special chars per line (breaks Telegram Markdown parsing)
+  result = result.split('\n').map((line) => {
+    // Skip placeholder lines (code blocks/inline code)
+    if (line.includes('\x00')) return line;
+
+    // Unbalanced * → replace last with Unicode ∗
+    const asterisks = line.match(/(?<!\*)\*(?!\*)/g);
+    if (asterisks && asterisks.length % 2 !== 0) {
+      const lastIdx = line.lastIndexOf('*');
+      line = line.slice(0, lastIdx) + '∗' + line.slice(lastIdx + 1);
+    }
+
+    // Unbalanced _ → replace last with Unicode ＿
+    const underscores = line.match(/_/g);
+    if (underscores && underscores.length % 2 !== 0) {
+      const lastIdx = line.lastIndexOf('_');
+      line = line.slice(0, lastIdx) + '＿' + line.slice(lastIdx + 1);
+    }
+
+    return line;
+  }).join('\n');
 
   // Restore inline code and code blocks
   result = result.replace(/\x00IC(\d+)\x00/g, (_match, i) => inlineCode[parseInt(i)]);
